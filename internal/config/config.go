@@ -17,6 +17,7 @@ type Config struct {
 	PrivateKey          [32]byte
 	DeclaredPublicKey   *[32]byte
 	PeerPublicKey       [32]byte
+	PresharedKey        [32]byte
 	Address             string
 	DNS                 string
 	Endpoint            string
@@ -61,26 +62,26 @@ func Load(path string) (Config, error) {
 
 	cfg := Config{
 		Path:                path,
-		Address:             values["Interface"]["Address"],
-		DNS:                 values["Interface"]["DNS"],
-		Endpoint:            values["Peer"]["Endpoint"],
-		AllowedIPs:          values["Peer"]["AllowedIPs"],
+		Address:             getValue(values, "Interface", "Address"),
+		DNS:                 getValue(values, "Interface", "DNS"),
+		Endpoint:            getValue(values, "Peer", "Endpoint"),
+		AllowedIPs:          getValue(values, "Peer", "AllowedIPs"),
 		PersistentKeepalive: 25,
 		MTU:                 1420,
 	}
 
-	priv, err := parseKey(values["Interface"]["PrivateKey"])
+	priv, err := parseKey(getValue(values, "Interface", "PrivateKey"))
 	if err != nil {
 		return Config{}, fmt.Errorf("Interface PrivateKey: %w", err)
 	}
-	peer, err := parseKey(values["Peer"]["PublicKey"])
+	peer, err := parseKey(getValue(values, "Peer", "PublicKey"))
 	if err != nil {
 		return Config{}, fmt.Errorf("Peer PublicKey: %w", err)
 	}
 	cfg.PrivateKey = priv
 	cfg.PeerPublicKey = peer
 
-	if declared := values["Interface"]["PublicKey"]; declared != "" {
+	if declared := getValue(values, "Interface", "PublicKey"); declared != "" {
 		key, err := parseKey(declared)
 		if err != nil {
 			return Config{}, fmt.Errorf("Interface PublicKey: %w", err)
@@ -88,14 +89,22 @@ func Load(path string) (Config, error) {
 		cfg.DeclaredPublicKey = &key
 	}
 
-	if v := values["Peer"]["PersistentKeepalive"]; v != "" {
+	if v := getValue(values, "Peer", "PresharedKey"); v != "" {
+		psk, err := parseKey(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("Peer PresharedKey: %w", err)
+		}
+		cfg.PresharedKey = psk
+	}
+
+	if v := getValue(values, "Peer", "PersistentKeepalive"); v != "" {
 		keepalive, err := strconv.Atoi(v)
 		if err != nil {
 			return Config{}, fmt.Errorf("PersistentKeepalive: %w", err)
 		}
 		cfg.PersistentKeepalive = keepalive
 	}
-	if v := values["Interface"]["MTU"]; v != "" {
+	if v := getValue(values, "Interface", "MTU"); v != "" {
 		mtu, err := strconv.Atoi(v)
 		if err != nil {
 			return Config{}, fmt.Errorf("MTU: %w", err)
@@ -123,6 +132,20 @@ func Load(path string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func getValue(values map[string]map[string]string, section, key string) string {
+	for sectionName, sectionValues := range values {
+		if !strings.EqualFold(sectionName, section) {
+			continue
+		}
+		for name, value := range sectionValues {
+			if strings.EqualFold(name, key) {
+				return value
+			}
+		}
+	}
+	return ""
 }
 
 func parseKey(value string) ([32]byte, error) {
