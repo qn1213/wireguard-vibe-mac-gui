@@ -1,0 +1,11 @@
+.DS_Store
+logs/
+*.log
+*.test
+*.out
+/wireguardc
+gui/.build/
+dist/*.app/
+
+# Contains the WireGuard interface private key.
+config/*.conf
