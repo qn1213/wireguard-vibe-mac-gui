@@ -101,13 +101,9 @@ func RunTunnel(ctx context.Context, cfg config.Config, opts RunOptions) error {
 	if err != nil {
 		return err
 	}
-	host, _, err := net.SplitHostPort(cfg.Endpoint)
-	if err != nil {
-		return err
-	}
 	routes := &routeManager{stateFile: opts.RouteStateFile}
 	defer routes.Cleanup()
-	if err := pinEndpointRoute(host, routes); err != nil {
+	if err := pinEndpointRoute(udpAddr.IP.String(), routes); err != nil {
 		return err
 	}
 

@@ -238,8 +238,7 @@ func (s *Session) ConsumeResponse(msg []byte) error {
 	}
 	ck, _ = kdf2(ck[:], se)
 
-	var zeroPSK [32]byte
-	ck, tau, key := kdf3(ck[:], zeroPSK[:])
+	ck, tau, key := kdf3(ck[:], s.cfg.PresharedKey[:])
 	h = hashBytes(h[:], tau[:])
 	if _, err := aeadOpen(key, 0, encryptedEmpty, h[:]); err != nil {
 		return fmt.Errorf("response authentication failed: %w", err)

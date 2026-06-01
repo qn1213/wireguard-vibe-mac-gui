@@ -22,6 +22,7 @@ struct ProfileEditorView: View {
                 field("Address", text: $profile.address)
                 field("DNS", text: $profile.dns)
                 field("Peer PublicKey", text: $profile.peerPublicKey)
+                secure("PresharedKey", text: $profile.presharedKey)
                 field("Endpoint", text: $profile.endpoint)
                 field("AllowedIPs", text: $profile.allowedIPs)
                 field("Keepalive", text: $profile.persistentKeepalive)

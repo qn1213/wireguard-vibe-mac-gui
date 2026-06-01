@@ -19,6 +19,7 @@ func TestInitiatorConsumesSyntheticResponse(t *testing.T) {
 	cfg := config.Config{
 		PrivateKey:          clientPriv,
 		PeerPublicKey:       serverPub,
+		PresharedKey:        mustPrivate(t),
 		Address:             "10.66.66.2/24",
 		DNS:                 "1.1.1.1",
 		Endpoint:            "127.0.0.1:51820",
@@ -33,7 +34,7 @@ func TestInitiatorConsumesSyntheticResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	response, responderSend, responderRecv := syntheticResponse(t, serverPriv, initiation)
+	response, responderSend, responderRecv := syntheticResponse(t, serverPriv, cfg.PresharedKey, initiation)
 	if err := initiator.ConsumeResponse(response); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func BenchmarkHandshakeSynthetic(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		response, _, _ := syntheticResponse(b, serverPriv, initiation)
+		response, _, _ := syntheticResponse(b, serverPriv, cfg.PresharedKey, initiation)
 		if err := initiator.ConsumeResponse(response); err != nil {
 			b.Fatal(err)
 		}
@@ -123,7 +124,7 @@ func BenchmarkTransportEncrypt1280(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	response, _, _ := syntheticResponse(b, serverPriv, initiation)
+	response, _, _ := syntheticResponse(b, serverPriv, cfg.PresharedKey, initiation)
 	if err := initiator.ConsumeResponse(response); err != nil {
 		b.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func BenchmarkTransportEncrypt1280(b *testing.B) {
 	}
 }
 
-func syntheticResponse(t testing.TB, serverPriv [32]byte, msg []byte) ([]byte, [32]byte, [32]byte) {
+func syntheticResponse(t testing.TB, serverPriv [32]byte, psk [32]byte, msg []byte) ([]byte, [32]byte, [32]byte) {
 	t.Helper()
 	if len(msg) != initiationSize {
 		t.Fatalf("bad initiation size: %d", len(msg))
@@ -214,8 +215,7 @@ func syntheticResponse(t testing.TB, serverPriv [32]byte, msg []byte) ([]byte, [
 	}
 	ck, _ = kdf2(ck[:], se)
 
-	var zeroPSK [32]byte
-	ck, tau, key := kdf3(ck[:], zeroPSK[:])
+	ck, tau, key := kdf3(ck[:], psk[:])
 	h = hashBytes(h[:], tau[:])
 	empty, err := aeadSeal(key, 0, nil, h[:])
 	if err != nil {

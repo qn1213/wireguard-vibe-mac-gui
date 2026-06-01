@@ -8,10 +8,26 @@ struct VPNProfile: Codable, Identifiable, Hashable {
     var address: String
     var dns: String
     var peerPublicKey: String
+    var presharedKey: String
     var endpoint: String
     var allowedIPs: String
     var persistentKeepalive: String
     var mtu: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case privateKey
+        case publicKey
+        case address
+        case dns
+        case peerPublicKey
+        case presharedKey
+        case endpoint
+        case allowedIPs
+        case persistentKeepalive
+        case mtu
+    }
 
     init(
         id: UUID = UUID(),
@@ -21,6 +37,7 @@ struct VPNProfile: Codable, Identifiable, Hashable {
         address: String,
         dns: String,
         peerPublicKey: String,
+        presharedKey: String = "",
         endpoint: String,
         allowedIPs: String,
         persistentKeepalive: String = "25",
@@ -33,10 +50,27 @@ struct VPNProfile: Codable, Identifiable, Hashable {
         self.address = address
         self.dns = dns
         self.peerPublicKey = peerPublicKey
+        self.presharedKey = presharedKey
         self.endpoint = endpoint
         self.allowedIPs = allowedIPs
         self.persistentKeepalive = persistentKeepalive
         self.mtu = mtu
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        privateKey = try container.decode(String.self, forKey: .privateKey)
+        publicKey = try container.decodeIfPresent(String.self, forKey: .publicKey) ?? ""
+        address = try container.decode(String.self, forKey: .address)
+        dns = try container.decode(String.self, forKey: .dns)
+        peerPublicKey = try container.decode(String.self, forKey: .peerPublicKey)
+        presharedKey = try container.decodeIfPresent(String.self, forKey: .presharedKey) ?? ""
+        endpoint = try container.decode(String.self, forKey: .endpoint)
+        allowedIPs = try container.decode(String.self, forKey: .allowedIPs)
+        persistentKeepalive = try container.decodeIfPresent(String.self, forKey: .persistentKeepalive) ?? "25"
+        mtu = try container.decodeIfPresent(String.self, forKey: .mtu) ?? "1420"
     }
 
     var configText: String {
@@ -53,15 +87,16 @@ struct VPNProfile: Codable, Identifiable, Hashable {
             interfaceLines.removeLast()
         }
 
-        return """
-        \(interfaceLines.joined(separator: "\n"))
+        let peerLines = [
+            "[Peer]",
+            "PublicKey = \(peerPublicKey)",
+            presharedKey.isEmpty ? nil : "PresharedKey = \(presharedKey)",
+            "Endpoint = \(endpoint)",
+            "AllowedIPs = \(allowedIPs)",
+            "PersistentKeepalive = \(persistentKeepalive.isEmpty ? "25" : persistentKeepalive)"
+        ].compactMap { $0 }
 
-        [Peer]
-        PublicKey = \(peerPublicKey)
-        Endpoint = \(endpoint)
-        AllowedIPs = \(allowedIPs)
-        PersistentKeepalive = \(persistentKeepalive.isEmpty ? "25" : persistentKeepalive)
-        """
+        return "\(interfaceLines.joined(separator: "\n"))\n\n\(peerLines.joined(separator: "\n"))"
     }
 
     static func parse(_ text: String, suggestedName: String) throws -> VPNProfile {
@@ -74,7 +109,9 @@ struct VPNProfile: Codable, Identifiable, Hashable {
                 continue
             }
             if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
-                section = String(trimmed.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+                section = String(trimmed.dropFirst().dropLast())
+                    .trimmingCharacters(in: .whitespaces)
+                    .lowercased()
                 values[section, default: [:]] = [:]
                 continue
             }
@@ -84,36 +121,37 @@ struct VPNProfile: Codable, Identifiable, Hashable {
             guard parts.count == 2, !section.isEmpty else {
                 continue
             }
-            values[section, default: [:]][parts[0]] = parts[1]
+            values[section, default: [:]][parts[0].lowercased()] = parts[1]
         }
 
-        guard let privateKey = values["Interface"]?["PrivateKey"], !privateKey.isEmpty else {
+        guard let privateKey = values["interface"]?["privatekey"], !privateKey.isEmpty else {
             throw ProfileError.invalidConfig("Interface PrivateKey가 없습니다.")
         }
-        guard let address = values["Interface"]?["Address"], !address.isEmpty else {
+        guard let address = values["interface"]?["address"], !address.isEmpty else {
             throw ProfileError.invalidConfig("Interface Address가 없습니다.")
         }
-        guard let dns = values["Interface"]?["DNS"], !dns.isEmpty else {
+        guard let dns = values["interface"]?["dns"], !dns.isEmpty else {
             throw ProfileError.invalidConfig("Interface DNS가 없습니다.")
         }
-        guard let peerPublicKey = values["Peer"]?["PublicKey"], !peerPublicKey.isEmpty else {
+        guard let peerPublicKey = values["peer"]?["publickey"], !peerPublicKey.isEmpty else {
             throw ProfileError.invalidConfig("Peer PublicKey가 없습니다.")
         }
-        guard let endpoint = values["Peer"]?["Endpoint"], !endpoint.isEmpty else {
+        guard let endpoint = values["peer"]?["endpoint"], !endpoint.isEmpty else {
             throw ProfileError.invalidConfig("Peer Endpoint가 없습니다.")
         }
 
         return VPNProfile(
             name: suggestedName,
             privateKey: privateKey,
-            publicKey: values["Interface"]?["PublicKey"] ?? "",
+            publicKey: values["interface"]?["publickey"] ?? "",
             address: address,
             dns: dns,
             peerPublicKey: peerPublicKey,
+            presharedKey: values["peer"]?["presharedkey"] ?? "",
             endpoint: endpoint,
-            allowedIPs: values["Peer"]?["AllowedIPs"] ?? "0.0.0.0/0",
-            persistentKeepalive: values["Peer"]?["PersistentKeepalive"] ?? "25",
-            mtu: values["Interface"]?["MTU"] ?? "1420"
+            allowedIPs: values["peer"]?["allowedips"] ?? "0.0.0.0/0",
+            persistentKeepalive: values["peer"]?["persistentkeepalive"] ?? "25",
+            mtu: values["interface"]?["mtu"] ?? "1420"
         )
     }
 }
