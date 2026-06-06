@@ -159,6 +159,9 @@ func RunTunnel(ctx context.Context, cfg config.Config, opts RunOptions) error {
 	keepalive := time.NewTicker(time.Duration(cfg.PersistentKeepalive) * time.Second)
 	defer keepalive.Stop()
 
+	rekeyTicker := time.NewTicker(120 * time.Second)
+	defer rekeyTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -168,6 +171,10 @@ func RunTunnel(ctx context.Context, cfg config.Config, opts RunOptions) error {
 			return nil
 		case <-keepalive.C:
 			_, _ = conn.Write(session.EncryptKeepalive())
+		case <-rekeyTicker.C:
+			if initiation, err := session.CreateInitiation(); err == nil {
+				_, _ = conn.Write(initiation)
+			}
 		case err := <-errCh:
 			if err == nil || errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
 				continue
@@ -246,19 +253,24 @@ func udpToTun(ctx context.Context, tun *tunDevice, conn *net.UDPConn, session *S
 		if err != nil {
 			return err
 		}
-		if n < 4 || binary.LittleEndian.Uint32(buf[:4]) != messageTransport {
+		if n < 4 {
 			continue
 		}
-		packet, err := session.DecryptTransport(buf[:n])
-		if err != nil {
-			continue
-		}
-		if len(packet) == 0 {
-			continue
-		}
-		counters.rxBytes.Add(uint64(len(packet)))
-		if err := tun.WritePacket(packet); err != nil {
-			return err
+		switch binary.LittleEndian.Uint32(buf[:4]) {
+		case messageTransport:
+			packet, err := session.DecryptTransport(buf[:n])
+			if err != nil {
+				continue
+			}
+			if len(packet) == 0 {
+				continue
+			}
+			counters.rxBytes.Add(uint64(len(packet)))
+			if err := tun.WritePacket(packet); err != nil {
+				return err
+			}
+		case messageResponse:
+			_ = session.ConsumeResponse(buf[:n])
 		}
 	}
 }
